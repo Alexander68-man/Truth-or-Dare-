@@ -2,98 +2,122 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, orientation=landscape">
     <title>Neon Platformer Mobile</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
     <style>
         body { margin: 0; padding: 0; background-color: #000; overflow: hidden; }
-        canvas { display: block; margin: 0 auto; }
+        canvas { display: block; }
     </style>
 </head>
 <body>
 <script>
 const config = {
     type: Phaser.AUTO,
-    width: 800,
-    height: 400,
-    parent: 'game-container',
-    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-    physics: { default: 'arcade', arcade: { gravity: { y: 800 }, debug: false } },
+    width: 960, // Wider for landscape
+    height: 540,
+    scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+        orientation: 'landscape' // Forces landscape view
+    },
+    physics: { 
+        default: 'arcade', 
+        arcade: { gravity: { y: 1000 }, debug: false } 
+    },
     scene: { preload: preload, create: create, update: update }
 };
 
 const game = new Phaser.Game(config);
 let player, platforms, enemies, bullets, lastFired = 0;
+let controls = {}; // Object to track our virtual buttons
 
 function preload() {}
 
 function create() {
-    // 1. World & Platforms
+    // 1. Level Design
     platforms = this.physics.add.staticGroup();
-    // Ground
-    platforms.add(this.add.rectangle(400, 390, 800, 20, 0x333333));
-    // Floating Platforms
-    platforms.add(this.add.rectangle(200, 280, 150, 15, 0x00ffcc));
-    platforms.add(this.add.rectangle(500, 200, 150, 15, 0x00ffcc));
-    platforms.add(this.add.rectangle(750, 120, 100, 15, 0x00ffcc));
+    platforms.add(this.add.rectangle(480, 520, 960, 40, 0x333333)); // Ground
+    platforms.add(this.add.rectangle(300, 350, 200, 20, 0x00ffcc)); // Platform
+    platforms.add(this.add.rectangle(700, 250, 200, 20, 0x00ffcc)); // Platform
 
-    // 2. The Player (Purple Square)
-    player = this.add.rectangle(50, 300, 30, 30, 0xff00ff);
+    // 2. The Player
+    player = this.add.rectangle(100, 450, 30, 30, 0xff00ff);
     this.physics.add.existing(player);
     player.body.setCollideWorldBounds(true);
     this.physics.add.collider(player, platforms);
 
-    // 3. Enemies (Red Triangles)
+    // 3. The Enemy (Red Square) - Placed where you can see it
     enemies = this.physics.add.group();
-    let enemy = this.add.triangle(400, 350, 0, 30, 15, 0, 30, 30, 0xff3333);
+    let enemy = this.add.rectangle(600, 450, 30, 30, 0xff3333);
     this.physics.add.existing(enemy);
     enemies.add(enemy);
-    enemy.body.setAllowGravity(false);
-    enemy.body.setVelocityX(100);
-    
+    enemy.body.setVelocityX(-150);
     this.physics.add.collider(enemies, platforms);
+    
+    // Reset player if touched by enemy
     this.physics.add.overlap(player, enemies, () => {
-        player.setPosition(50, 300); // Reset on hit
+        player.setPosition(100, 450);
     });
 
-    // 4. Bullets Group
+    // 4. Bullets
     bullets = this.physics.add.group();
 
-    // 5. Input Setup
-    this.input.addPointer(3); // Multi-touch for move + jump + shoot
+    // 5. VISUAL BUTTONS (UI)
+    // We create circles and set "scrollFactor(0)" so they stay on screen
+    const btnStyle = { fill: '#fff', fontSize: '32px', fontWeight: 'bold' };
+    
+    // Left Arrow
+    let btnLeft = this.add.circle(80, 460, 40, 0x444444, 0.7).setInteractive().setScrollFactor(0);
+    this.add.text(65, 440, "<", btnStyle).setScrollFactor(0);
+
+    // Right Arrow
+    let btnRight = this.add.circle(180, 460, 40, 0x444444, 0.7).setInteractive().setScrollFactor(0);
+    this.add.text(165, 440, ">", btnStyle).setScrollFactor(0);
+
+    // Jump (Right side)
+    let btnJump = this.add.circle(750, 460, 50, 0x0000ff, 0.7).setInteractive().setScrollFactor(0);
+    this.add.text(715, 440, "JMP", {fill: '#fff', fontSize: '20px'}).setScrollFactor(0);
+
+    // Fire (Right side)
+    let btnFire = this.add.circle(880, 460, 50, 0xff0000, 0.7).setInteractive().setScrollFactor(0);
+    this.add.text(850, 440, "FIR", {fill: '#fff', fontSize: '20px'}).setScrollFactor(0);
+
+    // Logic to track button presses
+    btnLeft.on('pointerdown', () => { controls.left = true; });
+    btnLeft.on('pointerup', () => { controls.left = false; });
+    
+    btnRight.on('pointerdown', () => { controls.right = true; });
+    btnRight.on('pointerup', () => { controls.right = false; });
+
+    btnJump.on('pointerdown', () => { if(player.body.touching.down) player.body.setVelocityY(-500); });
+    
+    btnFire.on('pointerdown', () => { controls.fire = true; });
+    btnFire.on('pointerup', () => { controls.fire = false; });
+
+    this.input.addPointer(3); // Multi-touch
 }
 
 function update(time) {
-    let pointers = [this.input.pointer1, this.input.pointer2, this.input.pointer3];
     player.body.setVelocityX(0);
 
-    // Enemy Patrol Logic
+    // Move Player based on buttons
+    if (controls.left) player.body.setVelocityX(-200);
+    else if (controls.right) player.body.setVelocityX(200);
+
+    // Shooting logic
+    if (controls.fire && time > lastFired) {
+        shootBullet(this);
+        lastFired = time + 300;
+    }
+
+    // Simple Enemy Patrol
     enemies.children.iterate(e => {
-        if (e.x > 600) e.body.setVelocityX(-100);
-        if (e.x < 300) e.body.setVelocityX(100);
+        if (e.x > 800) e.body.setVelocityX(-150);
+        if (e.x < 400) e.body.setVelocityX(150);
     });
 
-    // Touch Controls
-    pointers.forEach(p => {
-        if (p.isDown) {
-            // Movement (Left side of screen)
-            if (p.x < 150) player.body.setVelocityX(-200);
-            else if (p.x >= 150 && p.x < 300) player.body.setVelocityX(200);
-            
-            // Jump (Middle)
-            if (p.x >= 300 && p.x < 550 && player.body.touching.down) {
-                player.body.setVelocityY(-450);
-            }
-
-            // Shoot (Right side)
-            if (p.x >= 550 && time > lastFired) {
-                shootBullet(this);
-                lastFired = time + 400; // Fire rate delay
-            }
-        }
-    });
-
-    // Bullet physics - Kill enemy on hit
+    // Bullet hitting enemy
     this.physics.add.overlap(bullets, enemies, (b, e) => {
         b.destroy();
         e.destroy();
@@ -101,11 +125,11 @@ function update(time) {
 }
 
 function shootBullet(scene) {
-    let b = scene.add.rectangle(player.x + 20, player.y, 10, 5, 0xffff00);
+    let b = scene.add.rectangle(player.x + 20, player.y, 15, 5, 0xffff00);
     scene.physics.add.existing(b);
     bullets.add(b);
     b.body.setAllowGravity(false);
-    b.body.setVelocityX(400);
+    b.body.setVelocityX(500);
 }
 </script>
 </body>
