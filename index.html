@@ -2,116 +2,111 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
-    <title>WhatsApp Truth or Dare - Pro</title>
-    <meta name="description" content="A fun, interactive Truth or Dare game for WhatsApp groups!">
-    <meta property="og:title" content="Truth or Dare: WhatsApp Edition">
-    <meta property="og:description" content="Click to get a random Truth or Dare and share it with the group!">
-    <meta property="og:image" content="https://img.icons8.com/color/480/whatsapp.png"> <meta property="og:type" content="website">
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Platformer Mobile</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
     <style>
-        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background-color: #128C7E; color: #333; }
-        .card { background: white; padding: 25px; border-radius: 20px; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
-        
-        .admin { background: #f0f2f5; padding: 15px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #ddd; }
-        input { width: 90%; padding: 10px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #ccc; outline: none; }
-        input:focus { border-color: #25D366; }
-
-        .btn-row { display: flex; gap: 8px; margin-bottom: 10px; }
-        button { flex: 1; padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: transform 0.1s, background 0.2s; }
-        button:active { transform: scale(0.96); }
-
-        .btn-t { background: #34B7F1; color: white; }
-        .btn-d { background: #25D366; color: white; }
-        .btn-add { background: #444; color: white; font-size: 0.85rem; }
-        .btn-reset { background: #ff4b4b; color: white; margin-top: 10px; font-size: 0.75rem; width: 100%; opacity: 0.8; }
-        .btn-reset:hover { opacity: 1; }
-
-        #result { font-size: 1.4rem; margin: 25px 0; color: #075E54; font-weight: 500; min-height: 60px; display: flex; align-items: center; justify-content: center; }
-        
-        .copy-btn { width: 100%; background: #ece5dd; color: #075e54; display: none; margin-top: 10px; font-size: 1rem; border: 2px solid #075e54; }
-        
-        #countDisplay { display: block; margin-top: 5px; color: #666; font-size: 0.8rem; }
+        body { margin: 0; padding: 0; background-color: #000; overflow: hidden; }
+        canvas { display: block; margin: 0 auto; }
     </style>
 </head>
 <body>
-
-<div class="card">
-    <div class="admin">
-        <input type="text" id="customInput" placeholder="Add a custom secret/task...">
-        <div class="btn-row">
-            <button class="btn-add" onclick="saveItem('truth')">+ Truth</button>
-            <button class="btn-add" onclick="saveItem('dare')">+ Dare</button>
-        </div>
-        <small id="countDisplay">Loading prompts...</small>
-        <button class="btn-reset" onclick="resetGame()">Reset to Default Game</button>
-    </div>
-
-    <h2>Let's Play!</h2>
-    <div class="btn-row">
-        <button class="btn-t" onclick="play('truth')">Truth</button>
-        <button class="btn-d" onclick="play('dare')">Dare</button>
-    </div>
-
-    <div id="result">Pick your fate...</div>
-    <button id="copyBtn" class="copy-btn" onclick="copyToChat()">Copy for WhatsApp 📋</button>
-</div>
-
 <script>
-    // Default data
-    const defaultTruths = ["What is the last thing you searched for on your phone?", "Who in this group would you want to be stranded on an island with?", "Have you ever ghosted someone?"];
-    const defaultDares = ["Send a voice note of you trying to yodel.", "Change your status to 'I love pineapple on pizza' for 2 hours.", "Show the last text message you received."];
+const config = {
+    type: Phaser.AUTO,
+    width: 800,
+    height: 400,
+    parent: 'game-container',
+    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+    physics: { default: 'arcade', arcade: { gravity: { y: 800 }, debug: false } },
+    scene: { preload: preload, create: create, update: update }
+};
 
-    // Load from memory
-    let truths = JSON.parse(localStorage.getItem('myTruths')) || [...defaultTruths];
-    let dares = JSON.parse(localStorage.getItem('myDares')) || [...defaultDares];
+const game = new Phaser.Game(config);
+let player, platforms, enemies, bullets, lastFired = 0;
 
-    function updateUI() {
-        document.getElementById('countDisplay').innerText = `${truths.length} Truths | ${dares.length} Dares available`;
-    }
+function preload() {}
 
-    function saveItem(type) {
-        const input = document.getElementById('customInput');
-        const val = input.value.trim();
-        if (!val) return;
+function create() {
+    // 1. World & Platforms
+    platforms = this.physics.add.staticGroup();
+    // Ground
+    platforms.add(this.add.rectangle(400, 390, 800, 20, 0x333333));
+    // Floating Platforms
+    platforms.add(this.add.rectangle(200, 280, 150, 15, 0x00ffcc));
+    platforms.add(this.add.rectangle(500, 200, 150, 15, 0x00ffcc));
+    platforms.add(this.add.rectangle(750, 120, 100, 15, 0x00ffcc));
 
-        if (type === 'truth') {
-            truths.push(val);
-            localStorage.setItem('myTruths', JSON.stringify(truths));
-        } else {
-            dares.push(val);
-            localStorage.setItem('myDares', JSON.stringify(dares));
+    // 2. The Player (Purple Square)
+    player = this.add.rectangle(50, 300, 30, 30, 0xff00ff);
+    this.physics.add.existing(player);
+    player.body.setCollideWorldBounds(true);
+    this.physics.add.collider(player, platforms);
+
+    // 3. Enemies (Red Triangles)
+    enemies = this.physics.add.group();
+    let enemy = this.add.triangle(400, 350, 0, 30, 15, 0, 30, 30, 0xff3333);
+    this.physics.add.existing(enemy);
+    enemies.add(enemy);
+    enemy.body.setAllowGravity(false);
+    enemy.body.setVelocityX(100);
+    
+    this.physics.add.collider(enemies, platforms);
+    this.physics.add.overlap(player, enemies, () => {
+        player.setPosition(50, 300); // Reset on hit
+    });
+
+    // 4. Bullets Group
+    bullets = this.physics.add.group();
+
+    // 5. Input Setup
+    this.input.addPointer(3); // Multi-touch for move + jump + shoot
+}
+
+function update(time) {
+    let pointers = [this.input.pointer1, this.input.pointer2, this.input.pointer3];
+    player.body.setVelocityX(0);
+
+    // Enemy Patrol Logic
+    enemies.children.iterate(e => {
+        if (e.x > 600) e.body.setVelocityX(-100);
+        if (e.x < 300) e.body.setVelocityX(100);
+    });
+
+    // Touch Controls
+    pointers.forEach(p => {
+        if (p.isDown) {
+            // Movement (Left side of screen)
+            if (p.x < 150) player.body.setVelocityX(-200);
+            else if (p.x >= 150 && p.x < 300) player.body.setVelocityX(200);
+            
+            // Jump (Middle)
+            if (p.x >= 300 && p.x < 550 && player.body.touching.down) {
+                player.body.setVelocityY(-450);
+            }
+
+            // Shoot (Right side)
+            if (p.x >= 550 && time > lastFired) {
+                shootBullet(this);
+                lastFired = time + 400; // Fire rate delay
+            }
         }
+    });
 
-        input.value = "";
-        updateUI();
-    }
+    // Bullet physics - Kill enemy on hit
+    this.physics.add.overlap(bullets, enemies, (b, e) => {
+        b.destroy();
+        e.destroy();
+    });
+}
 
-    function play(type) {
-        const list = type === 'truth' ? truths : dares;
-        const pick = list[Math.floor(Math.random() * list.length)];
-        document.getElementById('result').innerText = pick;
-        document.getElementById('copyBtn').style.display = 'block';
-    }
-
-    function copyToChat() {
-        const text = document.getElementById('result').innerText;
-        navigator.clipboard.writeText(`*Truth or Dare Result:*\n\n"${text}"`).then(() => {
-            alert("Copied! Now go paste it in WhatsApp.");
-        });
-    }
-
-    function resetGame() {
-        if(confirm("This will delete all your custom prompts. Are you sure?")) {
-            localStorage.clear();
-            location.reload();
-        }
-    }
-
-    // Initialize
-    updateUI();
+function shootBullet(scene) {
+    let b = scene.add.rectangle(player.x + 20, player.y, 10, 5, 0xffff00);
+    scene.physics.add.existing(b);
+    bullets.add(b);
+    b.body.setAllowGravity(false);
+    b.body.setVelocityX(400);
+}
 </script>
-
 </body>
 </html>
