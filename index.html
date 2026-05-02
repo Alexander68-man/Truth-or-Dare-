@@ -2,23 +2,37 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Neon Runner Mobile</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Neon Runner A06 Fixed</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; background-color: #000; overflow: hidden; touch-action: none; }
-        canvas { touch-action: none; -webkit-tap-highlight-color: rgba(0,0,0,0); }
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }
+        canvas { display: block; touch-action: none; }
     </style>
 </head>
 <body>
 <script>
+// Logic to get the absolute maximum screen dimensions
+const getScreenSize = () => {
+    return {
+        w: Math.max(window.innerWidth, window.screen.width),
+        h: Math.max(window.innerHeight, window.screen.height)
+    };
+};
+
+const size = getScreenSize();
+
 const config = {
     type: Phaser.AUTO,
-    width: window.innerWidth, 
-    height: window.innerHeight,
+    width: size.w,
+    height: size.h,
+    scale: {
+        mode: Phaser.Scale.RESIZE, // This is key for the A06's long screen
+        autoCenter: Phaser.Scale.CENTER_BOTH
+    },
     physics: { 
         default: 'arcade', 
-        arcade: { gravity: { y: 1200 }, debug: false } 
+        arcade: { gravity: { y: 1600 }, debug: false } 
     },
     scene: { preload: preload, create: create, update: update }
 };
@@ -26,101 +40,97 @@ const config = {
 const game = new Phaser.Game(config);
 let player, platforms, enemies, bullets, lastFired = 0;
 let controls = { left: false, right: false, fire: false };
-let facing = 'right'; 
+let facing = 'right';
+let uiContainer;
 
 function preload() {}
 
 function create() {
-    const worldWidth = 4000; 
-    const h = window.innerHeight;
+    const worldWidth = 5000;
+    const gameW = this.sys.game.config.width;
+    const gameH = this.sys.game.config.height;
 
-    // 1. World & Camera Bounds
-    this.physics.world.setBounds(0, 0, worldWidth, h);
-    this.cameras.main.setBounds(0, 0, worldWidth, h);
+    this.physics.world.setBounds(0, 0, worldWidth, gameH);
+    this.cameras.main.setBounds(0, 0, worldWidth, gameH);
 
-    // 2. Environment
+    // 1. Ground and Platforms
     platforms = this.physics.add.staticGroup();
-    platforms.add(this.add.rectangle(worldWidth/2, h - 20, worldWidth, 40, 0x333333)); // Floor
+    platforms.add(this.add.rectangle(worldWidth/2, gameH - 20, worldWidth, 40, 0x222222));
     
-    // Procedural Platforms
-    for(let i = 0; i < 15; i++) {
-        let px = 500 + (i * 250);
-        let py = h - 150 - (Math.random() * 150);
-        platforms.add(this.add.rectangle(px, py, 150, 20, 0x00ffcc));
+    for(let i = 0; i < 20; i++) {
+        platforms.add(this.add.rectangle(600 + (i * 400), gameH - 180 - (Math.random() * 150), 180, 25, 0x00ffcc));
     }
 
-    // 3. Player Setup
-    player = this.add.rectangle(100, h - 100, 40, 40, 0xff00ff);
+    // 2. Player
+    player = this.add.rectangle(100, gameH - 100, 45, 45, 0xff00ff);
     this.physics.add.existing(player);
     player.body.setCollideWorldBounds(true);
     this.physics.add.collider(player, platforms);
     this.cameras.main.startFollow(player, true, 0.1, 0.1);
 
-    // 4. Enemy Setup
+    // 3. Enemies
     enemies = this.physics.add.group();
-    [800, 1600, 2400, 3200].forEach(x => {
-        let e = this.add.rectangle(x, h - 100, 40, 40, 0xff3333);
+    for(let i = 0; i < 8; i++) {
+        let e = this.add.rectangle(1200 + (i * 600), gameH - 100, 40, 40, 0xff3333);
         this.physics.add.existing(e);
         enemies.add(e);
-        e.body.setVelocityX(-150);
+        e.body.setVelocityX(-200);
         e.body.setCollideWorldBounds(true);
-    });
+    }
     this.physics.add.collider(enemies, platforms);
-    this.physics.add.overlap(player, enemies, () => player.setPosition(100, h-100));
+    this.physics.add.overlap(player, enemies, () => player.setPosition(100, gameH-100));
 
-    // 5. FIXED UI CONTROLS (HUD)
-    let ui = this.add.container(0, 0).setScrollFactor(0);
-
-    const makeBtn = (x, y, txt, color, onDn, onUp) => {
-        let circle = this.add.circle(x, y, 45, color, 0.5).setInteractive();
-        let label = this.add.text(x-12, y-12, txt, {fontSize: '24px', color: '#fff'});
-        ui.add([circle, label]);
-        circle.on('pointerdown', onDn);
-        circle.on('pointerup', onUp);
-        circle.on('pointerout', onUp);
+    // 4. Fixed UI (Using screen percentages for perfect ratio)
+    uiContainer = this.add.container(0, 0).setScrollFactor(0);
+    
+    const setupBtn = (x, y, label, color, dn, up) => {
+        let circle = this.add.circle(x, y, 55, color, 0.5).setInteractive();
+        let txt = this.add.text(x - 15, y - 18, label, { fontSize: '32px', color: '#fff' });
+        uiContainer.add([circle, txt]);
+        circle.on('pointerdown', () => { circle.setAlpha(0.9); dn(); });
+        circle.on('pointerup', () => { circle.setAlpha(0.5); up(); });
+        circle.on('pointerout', () => { circle.setAlpha(0.5); up(); });
     };
 
-    // Layout for 20:9 Screens
-    let margin = 80;
-    makeBtn(margin, h - margin, "L", 0x444444, () => controls.left = true, () => controls.left = false);
-    makeBtn(margin + 110, h - margin, "R", 0x444444, () => controls.right = true, () => controls.right = false);
-    makeBtn(window.innerWidth - 190, h - margin, "J", 0x0000ff, () => { if(player.body.touching.down) player.body.setVelocityY(-650) }, () => {});
-    makeBtn(window.innerWidth - 80, h - margin, "F", 0xff0000, () => controls.fire = true, () => controls.fire = false);
+    // Mapping to the corners of any screen size
+    let padding = 100;
+    setupBtn(padding, gameH - padding, "←", 0x444444, () => controls.left = true, () => controls.left = false);
+    setupBtn(padding + 130, gameH - padding, "→", 0x444444, () => controls.right = true, () => controls.right = false);
+    setupBtn(gameW - 250, gameH - padding, "↑", 0x0000ff, () => { if(player.body.touching.down) player.body.setVelocityY(-800) }, () => {});
+    setupBtn(gameW - 100, gameH - padding, "💥", 0xff0000, () => controls.fire = true, () => controls.fire = false);
 
     bullets = this.physics.add.group();
-    this.input.addPointer(3); 
+    this.input.addPointer(3);
 }
 
 function update(time) {
-    player.body.setVelocityX(0);
-
     if (controls.left) {
-        player.body.setVelocityX(-300);
+        player.body.setVelocityX(-400);
         facing = 'left';
     } else if (controls.right) {
-        player.body.setVelocityX(300);
+        player.body.setVelocityX(400);
         facing = 'right';
+    } else {
+        player.body.setVelocityX(0);
     }
 
     if (controls.fire && time > lastFired) {
-        let offset = (facing === 'right') ? 35 : -35;
-        let b = this.add.rectangle(player.x + offset, player.y, 20, 10, 0xffff00);
+        let dir = (facing === 'right') ? 1 : -1;
+        let b = this.add.rectangle(player.x + (dir * 45), player.y, 30, 10, 0xffff00);
         this.physics.add.existing(b);
         bullets.add(b);
         b.body.setAllowGravity(false);
-        b.body.setVelocityX(facing === 'right' ? 700 : -700);
-        lastFired = time + 250;
+        b.body.setVelocityX(dir * 1000);
+        lastFired = time + 180;
     }
 
     enemies.children.iterate(e => {
-        if (e && e.body.blocked.left) e.body.setVelocityX(150);
-        else if (e && e.body.blocked.right) e.body.setVelocityX(-150);
+        if (e && (e.body.blocked.left || e.body.blocked.right)) {
+            e.body.setVelocityX(e.body.velocity.x * -1);
+        }
     });
 
-    this.physics.add.overlap(bullets, enemies, (bullet, enemy) => {
-        bullet.destroy();
-        enemy.destroy();
-    });
+    this.physics.add.overlap(bullets, enemies, (bul, nmy) => { bul.destroy(); nmy.destroy(); });
 }
 </script>
 </body>
