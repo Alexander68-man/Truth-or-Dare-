@@ -3,29 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Studio Meme Game</title>
+    <title>Studio Meme Game - A06 Ultra</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body, #root { 
+            width: 100%; 
+            height: 100%; 
+            background-color: #000; 
+            overflow: hidden; 
+            touch-action: none; /* Forces browser to ignore gestures */
         }
-        html,
-        body,
-        #root {
-            width: 100%;
-            height: 100%;
-            background-color: #000;
-            overflow: hidden;
-        }
-        body {
-            font-family: system-ui, -apple-system, sans-serif;
-        }
-        canvas {
-            display: block;
-            touch-action: none;
-            -webkit-tap-highlight-color: rgba(0,0,0,0);
+        canvas { 
+            display: block; 
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
         }
     </style>
 </head>
@@ -33,26 +28,32 @@
     <div id="root"></div>
 
     <script>
-    /**
-     * GAME CONFIGURATION
-     * Optimized for Samsung A06 (20:9 Aspect Ratio)
-     */
+    // Force the game to find the actual pixel dimensions of the A06 screen
+    const getDisplaySize = () => {
+        const dpr = window.devicePixelRatio || 1;
+        return {
+            w: window.innerWidth,
+            h: window.innerHeight
+        };
+    };
+
+    const size = getDisplaySize();
+
     const config = {
         type: Phaser.AUTO,
         parent: 'root',
-        width: window.innerWidth,
-        height: window.innerHeight,
+        width: size.w,
+        height: size.h,
         scale: {
-            mode: Phaser.Scale.RESIZE,
+            mode: Phaser.Scale.ENVELOP, // Hard-fills the screen
             autoCenter: Phaser.Scale.CENTER_BOTH
+        },
+        input: {
+            activePointers: 4 // Ensures move + jump + fire works simultaneously
         },
         physics: {
             default: 'arcade',
-            arcade: {
-                gravity: { y: 1600 },
-                fps: 60,
-                fixedStep: true // Prevents stuttering on mobile CPUs
-            }
+            arcade: { gravity: { y: 1600 }, fps: 60 }
         },
         scene: { preload: preload, create: create, update: update }
     };
@@ -64,148 +65,104 @@
     let currentLevel = 1;
     let lastFired = 0;
 
-    function preload() {
-        // Assets are generated via code (Rectangles/Stars) to avoid loading errors
-    }
+    function preload() {}
 
     function create() {
         const scene = this;
-        const worldWidth = 6000; // Total length of the level
-        const h = scene.sys.game.config.height;
         const w = scene.sys.game.config.width;
+        const h = scene.sys.game.config.height;
+        const worldWidth = 6000;
 
-        // Set World and Camera Boundaries
         scene.physics.world.setBounds(0, 0, worldWidth, h);
         scene.cameras.main.setBounds(0, 0, worldWidth, h);
 
-        // 1. FLOOR & PLATFORMS
+        // 1. Level Design
         platforms = scene.physics.add.staticGroup();
-        // Solid ground floor
-        platforms.add(scene.add.rectangle(worldWidth / 2, h - 20, worldWidth, 40, 0x111111));
+        platforms.add(scene.add.rectangle(worldWidth/2, h - 20, worldWidth, 40, 0x1a1a1a));
         
-        // Procedural Platform Generation
-        for (let i = 0; i < 30; i++) {
-            let px = 600 + (i * 250);
-            let py = h - 160 - (Math.random() * 200);
-            platforms.add(scene.add.rectangle(px, py, 150, 20, 0x00ffcc));
+        for(let i = 0; i < 30; i++) {
+            platforms.add(scene.add.rectangle(600 + (i * 250), h - 180 - (Math.random() * 200), 160, 25, 0x00ffcc));
         }
 
-        // 2. THE PLAYER
-        player = scene.add.rectangle(100, h - 100, 45, 45, 0xff00ff);
+        // 2. Player
+        player = scene.add.rectangle(100, h - 100, 50, 50, 0xff00ff);
         scene.physics.add.existing(player);
         player.body.setCollideWorldBounds(true);
         scene.physics.add.collider(player, platforms);
-        
-        // Smooth camera follow
         scene.cameras.main.startFollow(player, true, 0.1, 0.1);
 
-        // 3. THE GOAL (Objective Star)
-        goal = scene.add.star(worldWidth - 150, h - 150, 5, 20, 40, 0xffff00);
+        // 3. Goal & Enemies
+        goal = scene.add.star(worldWidth - 150, h - 150, 5, 25, 50, 0xffff00);
         scene.physics.add.existing(goal);
         goal.body.setAllowGravity(false);
 
-        // 4. THE ENEMIES
         enemies = scene.physics.add.group();
-        for (let i = 0; i < 12; i++) {
-            let ex = 1200 + (i * 500);
-            let ey = h - 100;
-            let enemy = scene.add.rectangle(ex, ey, 40, 40, 0xff3333);
-            scene.physics.add.existing(enemy);
-            enemies.add(enemy);
-            enemy.body.setVelocityX(-200 - (currentLevel * 10));
-            enemy.body.setCollideWorldBounds(true);
+        for(let i = 0; i < 12; i++) {
+            let e = scene.add.rectangle(1200 + (i * 500), h - 100, 45, 45, 0xff3333);
+            scene.physics.add.existing(e);
+            enemies.add(e);
+            e.body.setVelocityX(-220);
+            e.body.setCollideWorldBounds(true);
         }
         scene.physics.add.collider(enemies, platforms);
 
-        // 5. BULLETS & OVERLAPS
-        bullets = scene.physics.add.group();
-        
-        // Player hits enemy -> Back to start
-        scene.physics.add.overlap(player, enemies, () => {
-            player.setPosition(100, h - 100);
-        });
-
-        // Player hits star -> Next Level
+        // Overlaps
+        scene.physics.add.overlap(player, enemies, () => player.setPosition(100, h - 100));
         scene.physics.add.overlap(player, goal, () => {
             currentLevel++;
             scene.scene.restart();
         });
 
-        // 6. UI & MOBILE CONTROLS
+        // 4. BIGGER TOUCH CONTROLS
         setupHUD(scene, w, h);
     }
 
     function setupHUD(scene, w, h) {
         let ui = scene.add.container(0, 0).setScrollFactor(0);
-        
-        // Stage Display
-        levelText = scene.add.text(w / 2, 40, `STAGE ${currentLevel}`, { 
-            fontSize: '28px', 
-            color: '#ffffff',
-            fontStyle: 'bold'
-        }).setOrigin(0.5);
+        levelText = scene.add.text(w/2, 50, `STAGE ${currentLevel}`, { fontSize: '32px', color: '#fff' }).setOrigin(0.5);
         ui.add(levelText);
 
-        const createButton = (x, y, label, color, onDown, onUp) => {
-            let circle = scene.add.circle(x, y, 55, color, 0.4).setInteractive();
-            let text = scene.add.text(x, y, label, { fontSize: '32px' }).setOrigin(0.5);
-            ui.add([circle, text]);
-            
-            circle.on('pointerdown', () => { circle.setAlpha(0.8); onDown(); });
-            circle.on('pointerup', () => { circle.setAlpha(0.4); onUp(); });
-            circle.on('pointerout', () => { circle.setAlpha(0.4); onUp(); });
+        const createBigBtn = (x, y, label, color, dn, up) => {
+            // Invisible larger hit area for thumbs
+            let hitArea = scene.add.circle(x, y, 70, 0x000, 0).setInteractive(); 
+            let visual = scene.add.circle(x, y, 55, color, 0.5);
+            let txt = scene.add.text(x, y, label, { fontSize: '35px' }).setOrigin(0.5);
+            ui.add([visual, txt, hitArea]);
+
+            hitArea.on('pointerdown', () => { visual.setAlpha(0.9); dn(); });
+            hitArea.on('pointerup', () => { visual.setAlpha(0.5); up(); });
+            hitArea.on('pointerout', () => { visual.setAlpha(0.5); up(); });
         };
 
-        // Layout mapping for 20:9 screens
-        let margin = 100;
-        createButton(margin, h - margin, "←", 0x444444, () => controls.left = true, () => controls.left = false);
-        createButton(margin + 130, h - margin, "→", 0x444444, () => controls.right = true, () => controls.right = false);
-        createButton(w - 240, h - margin, "↑", 0x0000ff, () => { if(player.body.touching.down) player.body.setVelocityY(-850) }, () => {});
-        createButton(w - 100, h - margin, "💥", 0xff0000, () => controls.fire = true, () => controls.fire = false);
+        // UI Layout specifically for Samsung A06
+        let pad = 110;
+        createBigBtn(pad, h - pad, "←", 0x444444, () => controls.left = true, () => controls.left = false);
+        createBigBtn(pad + 150, h - pad, "→", 0x444444, () => controls.right = true, () => controls.right = false);
+        createBigBtn(w - 280, h - pad, "↑", 0x0000ff, () => { if(player.body.touching.down) player.body.setVelocityY(-900) }, () => {});
+        createBigBtn(w - 110, h - pad, "💥", 0xff0000, () => controls.fire = true, () => controls.fire = false);
 
-        scene.input.addPointer(3); // Multi-touch support
+        bullets = scene.physics.add.group();
     }
 
     function update(time) {
-        // Player Velocity
-        if (controls.left) {
-            player.body.setVelocityX(-450);
-            facing = 'left';
-        } else if (controls.right) {
-            player.body.setVelocityX(450);
-            facing = 'right';
-        } else {
-            player.body.setVelocityX(0);
-        }
+        if (controls.left) { player.body.setVelocityX(-450); facing = 'left'; }
+        else if (controls.right) { player.body.setVelocityX(450); facing = 'right'; }
+        else { player.body.setVelocityX(0); }
 
-        // Firing Logic
         if (controls.fire && time > lastFired) {
             let dir = (facing === 'right') ? 1 : -1;
-            let b = this.add.rectangle(player.x + (dir * 45), player.y, 30, 10, 0xffff00);
+            let b = this.add.rectangle(player.x + (dir * 45), player.y, 35, 12, 0xffff00);
             this.physics.add.existing(b);
             bullets.add(b);
             b.body.setAllowGravity(false);
-            b.body.setVelocityX(dir * 1200);
-            lastFired = time + 150; // Fire rate delay
+            b.body.setVelocityX(dir * 1300);
+            lastFired = time + 140;
         }
 
-        // Enemy Patrol Logic
         enemies.children.iterate(e => {
-            if (e && (e.body.blocked.left || e.body.blocked.right)) {
-                e.body.setVelocityX(e.body.velocity.x * -1);
-            }
+            if (e && (e.body.blocked.left || e.body.blocked.right)) e.body.setVelocityX(e.body.velocity.x * -1);
         });
-
-        // Bullet hits enemy
-        this.physics.add.overlap(bullets, enemies, (bul, nmy) => {
-            bul.destroy();
-            nmy.destroy();
-        });
-
-        // Cleanup off-screen bullets
-        bullets.children.iterate(b => {
-            if (b && (Math.abs(b.x - player.x) > 1000)) b.destroy();
-        });
+        this.physics.add.overlap(bullets, enemies, (bul, nmy) => { bul.destroy(); nmy.destroy(); });
     }
     </script>
 </body>
