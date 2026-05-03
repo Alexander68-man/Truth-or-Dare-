@@ -3,135 +3,210 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Neon Runner A06 Fixed</title>
+    <title>Studio Meme Game</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
     <style>
-        html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }
-        canvas { display: block; touch-action: none; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html,
+        body,
+        #root {
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            overflow: hidden;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        canvas {
+            display: block;
+            touch-action: none;
+            -webkit-tap-highlight-color: rgba(0,0,0,0);
+        }
     </style>
 </head>
 <body>
-<script>
-// Logic to get the absolute maximum screen dimensions
-const getScreenSize = () => {
-    return {
-        w: Math.max(window.innerWidth, window.screen.width),
-        h: Math.max(window.innerHeight, window.screen.height)
-    };
-};
+    <div id="root"></div>
 
-const size = getScreenSize();
-
-const config = {
-    type: Phaser.AUTO,
-    width: size.w,
-    height: size.h,
-    scale: {
-        mode: Phaser.Scale.RESIZE, // This is key for the A06's long screen
-        autoCenter: Phaser.Scale.CENTER_BOTH
-    },
-    physics: { 
-        default: 'arcade', 
-        arcade: { gravity: { y: 1600 }, debug: false } 
-    },
-    scene: { preload: preload, create: create, update: update }
-};
-
-const game = new Phaser.Game(config);
-let player, platforms, enemies, bullets, lastFired = 0;
-let controls = { left: false, right: false, fire: false };
-let facing = 'right';
-let uiContainer;
-
-function preload() {}
-
-function create() {
-    const worldWidth = 5000;
-    const gameW = this.sys.game.config.width;
-    const gameH = this.sys.game.config.height;
-
-    this.physics.world.setBounds(0, 0, worldWidth, gameH);
-    this.cameras.main.setBounds(0, 0, worldWidth, gameH);
-
-    // 1. Ground and Platforms
-    platforms = this.physics.add.staticGroup();
-    platforms.add(this.add.rectangle(worldWidth/2, gameH - 20, worldWidth, 40, 0x222222));
-    
-    for(let i = 0; i < 20; i++) {
-        platforms.add(this.add.rectangle(600 + (i * 400), gameH - 180 - (Math.random() * 150), 180, 25, 0x00ffcc));
-    }
-
-    // 2. Player
-    player = this.add.rectangle(100, gameH - 100, 45, 45, 0xff00ff);
-    this.physics.add.existing(player);
-    player.body.setCollideWorldBounds(true);
-    this.physics.add.collider(player, platforms);
-    this.cameras.main.startFollow(player, true, 0.1, 0.1);
-
-    // 3. Enemies
-    enemies = this.physics.add.group();
-    for(let i = 0; i < 8; i++) {
-        let e = this.add.rectangle(1200 + (i * 600), gameH - 100, 40, 40, 0xff3333);
-        this.physics.add.existing(e);
-        enemies.add(e);
-        e.body.setVelocityX(-200);
-        e.body.setCollideWorldBounds(true);
-    }
-    this.physics.add.collider(enemies, platforms);
-    this.physics.add.overlap(player, enemies, () => player.setPosition(100, gameH-100));
-
-    // 4. Fixed UI (Using screen percentages for perfect ratio)
-    uiContainer = this.add.container(0, 0).setScrollFactor(0);
-    
-    const setupBtn = (x, y, label, color, dn, up) => {
-        let circle = this.add.circle(x, y, 55, color, 0.5).setInteractive();
-        let txt = this.add.text(x - 15, y - 18, label, { fontSize: '32px', color: '#fff' });
-        uiContainer.add([circle, txt]);
-        circle.on('pointerdown', () => { circle.setAlpha(0.9); dn(); });
-        circle.on('pointerup', () => { circle.setAlpha(0.5); up(); });
-        circle.on('pointerout', () => { circle.setAlpha(0.5); up(); });
+    <script>
+    /**
+     * GAME CONFIGURATION
+     * Optimized for Samsung A06 (20:9 Aspect Ratio)
+     */
+    const config = {
+        type: Phaser.AUTO,
+        parent: 'root',
+        width: window.innerWidth,
+        height: window.innerHeight,
+        scale: {
+            mode: Phaser.Scale.RESIZE,
+            autoCenter: Phaser.Scale.CENTER_BOTH
+        },
+        physics: {
+            default: 'arcade',
+            arcade: {
+                gravity: { y: 1600 },
+                fps: 60,
+                fixedStep: true // Prevents stuttering on mobile CPUs
+            }
+        },
+        scene: { preload: preload, create: create, update: update }
     };
 
-    // Mapping to the corners of any screen size
-    let padding = 100;
-    setupBtn(padding, gameH - padding, "←", 0x444444, () => controls.left = true, () => controls.left = false);
-    setupBtn(padding + 130, gameH - padding, "→", 0x444444, () => controls.right = true, () => controls.right = false);
-    setupBtn(gameW - 250, gameH - padding, "↑", 0x0000ff, () => { if(player.body.touching.down) player.body.setVelocityY(-800) }, () => {});
-    setupBtn(gameW - 100, gameH - padding, "💥", 0xff0000, () => controls.fire = true, () => controls.fire = false);
+    const game = new Phaser.Game(config);
+    let player, platforms, enemies, bullets, goal, levelText;
+    let controls = { left: false, right: false, fire: false };
+    let facing = 'right';
+    let currentLevel = 1;
+    let lastFired = 0;
 
-    bullets = this.physics.add.group();
-    this.input.addPointer(3);
-}
-
-function update(time) {
-    if (controls.left) {
-        player.body.setVelocityX(-400);
-        facing = 'left';
-    } else if (controls.right) {
-        player.body.setVelocityX(400);
-        facing = 'right';
-    } else {
-        player.body.setVelocityX(0);
+    function preload() {
+        // Assets are generated via code (Rectangles/Stars) to avoid loading errors
     }
 
-    if (controls.fire && time > lastFired) {
-        let dir = (facing === 'right') ? 1 : -1;
-        let b = this.add.rectangle(player.x + (dir * 45), player.y, 30, 10, 0xffff00);
-        this.physics.add.existing(b);
-        bullets.add(b);
-        b.body.setAllowGravity(false);
-        b.body.setVelocityX(dir * 1000);
-        lastFired = time + 180;
-    }
+    function create() {
+        const scene = this;
+        const worldWidth = 6000; // Total length of the level
+        const h = scene.sys.game.config.height;
+        const w = scene.sys.game.config.width;
 
-    enemies.children.iterate(e => {
-        if (e && (e.body.blocked.left || e.body.blocked.right)) {
-            e.body.setVelocityX(e.body.velocity.x * -1);
+        // Set World and Camera Boundaries
+        scene.physics.world.setBounds(0, 0, worldWidth, h);
+        scene.cameras.main.setBounds(0, 0, worldWidth, h);
+
+        // 1. FLOOR & PLATFORMS
+        platforms = scene.physics.add.staticGroup();
+        // Solid ground floor
+        platforms.add(scene.add.rectangle(worldWidth / 2, h - 20, worldWidth, 40, 0x111111));
+        
+        // Procedural Platform Generation
+        for (let i = 0; i < 30; i++) {
+            let px = 600 + (i * 250);
+            let py = h - 160 - (Math.random() * 200);
+            platforms.add(scene.add.rectangle(px, py, 150, 20, 0x00ffcc));
         }
-    });
 
-    this.physics.add.overlap(bullets, enemies, (bul, nmy) => { bul.destroy(); nmy.destroy(); });
-}
-</script>
+        // 2. THE PLAYER
+        player = scene.add.rectangle(100, h - 100, 45, 45, 0xff00ff);
+        scene.physics.add.existing(player);
+        player.body.setCollideWorldBounds(true);
+        scene.physics.add.collider(player, platforms);
+        
+        // Smooth camera follow
+        scene.cameras.main.startFollow(player, true, 0.1, 0.1);
+
+        // 3. THE GOAL (Objective Star)
+        goal = scene.add.star(worldWidth - 150, h - 150, 5, 20, 40, 0xffff00);
+        scene.physics.add.existing(goal);
+        goal.body.setAllowGravity(false);
+
+        // 4. THE ENEMIES
+        enemies = scene.physics.add.group();
+        for (let i = 0; i < 12; i++) {
+            let ex = 1200 + (i * 500);
+            let ey = h - 100;
+            let enemy = scene.add.rectangle(ex, ey, 40, 40, 0xff3333);
+            scene.physics.add.existing(enemy);
+            enemies.add(enemy);
+            enemy.body.setVelocityX(-200 - (currentLevel * 10));
+            enemy.body.setCollideWorldBounds(true);
+        }
+        scene.physics.add.collider(enemies, platforms);
+
+        // 5. BULLETS & OVERLAPS
+        bullets = scene.physics.add.group();
+        
+        // Player hits enemy -> Back to start
+        scene.physics.add.overlap(player, enemies, () => {
+            player.setPosition(100, h - 100);
+        });
+
+        // Player hits star -> Next Level
+        scene.physics.add.overlap(player, goal, () => {
+            currentLevel++;
+            scene.scene.restart();
+        });
+
+        // 6. UI & MOBILE CONTROLS
+        setupHUD(scene, w, h);
+    }
+
+    function setupHUD(scene, w, h) {
+        let ui = scene.add.container(0, 0).setScrollFactor(0);
+        
+        // Stage Display
+        levelText = scene.add.text(w / 2, 40, `STAGE ${currentLevel}`, { 
+            fontSize: '28px', 
+            color: '#ffffff',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        ui.add(levelText);
+
+        const createButton = (x, y, label, color, onDown, onUp) => {
+            let circle = scene.add.circle(x, y, 55, color, 0.4).setInteractive();
+            let text = scene.add.text(x, y, label, { fontSize: '32px' }).setOrigin(0.5);
+            ui.add([circle, text]);
+            
+            circle.on('pointerdown', () => { circle.setAlpha(0.8); onDown(); });
+            circle.on('pointerup', () => { circle.setAlpha(0.4); onUp(); });
+            circle.on('pointerout', () => { circle.setAlpha(0.4); onUp(); });
+        };
+
+        // Layout mapping for 20:9 screens
+        let margin = 100;
+        createButton(margin, h - margin, "←", 0x444444, () => controls.left = true, () => controls.left = false);
+        createButton(margin + 130, h - margin, "→", 0x444444, () => controls.right = true, () => controls.right = false);
+        createButton(w - 240, h - margin, "↑", 0x0000ff, () => { if(player.body.touching.down) player.body.setVelocityY(-850) }, () => {});
+        createButton(w - 100, h - margin, "💥", 0xff0000, () => controls.fire = true, () => controls.fire = false);
+
+        scene.input.addPointer(3); // Multi-touch support
+    }
+
+    function update(time) {
+        // Player Velocity
+        if (controls.left) {
+            player.body.setVelocityX(-450);
+            facing = 'left';
+        } else if (controls.right) {
+            player.body.setVelocityX(450);
+            facing = 'right';
+        } else {
+            player.body.setVelocityX(0);
+        }
+
+        // Firing Logic
+        if (controls.fire && time > lastFired) {
+            let dir = (facing === 'right') ? 1 : -1;
+            let b = this.add.rectangle(player.x + (dir * 45), player.y, 30, 10, 0xffff00);
+            this.physics.add.existing(b);
+            bullets.add(b);
+            b.body.setAllowGravity(false);
+            b.body.setVelocityX(dir * 1200);
+            lastFired = time + 150; // Fire rate delay
+        }
+
+        // Enemy Patrol Logic
+        enemies.children.iterate(e => {
+            if (e && (e.body.blocked.left || e.body.blocked.right)) {
+                e.body.setVelocityX(e.body.velocity.x * -1);
+            }
+        });
+
+        // Bullet hits enemy
+        this.physics.add.overlap(bullets, enemies, (bul, nmy) => {
+            bul.destroy();
+            nmy.destroy();
+        });
+
+        // Cleanup off-screen bullets
+        bullets.children.iterate(b => {
+            if (b && (Math.abs(b.x - player.x) > 1000)) b.destroy();
+        });
+    }
+    </script>
 </body>
 </html>
